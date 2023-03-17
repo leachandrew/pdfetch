@@ -581,14 +581,21 @@ pdfetch_ONS <- function(identifiers, dataset) {
 #' \dontrun{
 #' pdfetch_EIA(c("ELEC.GEN.ALL-AK-99.A","ELEC.GEN.ALL-AK-99.Q"), EIA_KEY)
 #' }
+#' 
+#'
 pdfetch_EIA <- function(identifiers, api_key) {
+  #pdfetch_EIA("PET.RWTC.D",KEY)
+  
   results <- list()
   
   freqlist <- c()
   
   for (i in 1:length(identifiers)) {
     id <- identifiers[i]
-    url <- paste0("https://api.eia.gov/series/?series_id=",id,"&api_key=",api_key)
+    #add v2 api links
+    #id<-"PET.RWTC.D"
+    # https://api.eia.gov/v2/seriesid/ELEC.SALES.CO-RES.D?api_key=xxxxxx
+    url <- paste0("https://api.eia.gov/v2/seriesid/",id,"?api_key=",api_key)
     req <- GET(url)
     res <- fromJSON(content(req, as="text", encoding="utf-8"))
     
@@ -597,42 +604,25 @@ pdfetch_EIA <- function(identifiers, api_key) {
       next
     }
     
-    freq <- res$series$f
-    dates <- res$series$data[[1]][,1]
-    data <- as.numeric(res$series$data[[1]][,2])
-    freqlist <- c(freqlist, freq)
+    freq <- res$response$frequency
+    date_format<- res$response$dateFormat
+    #fix date format
+    date_format<-gsub("YYYY","%Y",date_format)
+    date_format<-gsub("YY","%y",date_format)
+    date_format<-gsub("MM","%m",date_format)
+    date_format<-gsub("DD","%d",date_format)
     
-    if (freq == "A") {
-      dates <- as.Date(ISOdate(as.numeric(dates), 12, 31))
-    } else if (freq == "Q") {
-      y <- as.numeric(substr(dates, 1, 4))
-      m <- 3*as.numeric(substr(dates, 6, 6))
-      dates <- month_end(as.Date(ISOdate(y,m,1)))
-    } else if (freq == "M") {
-      y <- as.numeric(substr(dates, 1, 4))
-      m <- as.numeric(substr(dates, 5, 6))
-      dates <- month_end(as.Date(ISOdate(y,m,1)))
-    } else if (freq == "W" || freq == "D") {
-      dates <- as.Date(dates, "%Y%m%d")
-    } else if (freq == "H") {
-      dates <- as.POSIXct(dates, format="%Y%m%dT%HZ", tz="GMT")
-    } else {
-      warning(paste("Unrecognized frequency",freq,"for series",id))
-      next
-    }
     
-    x <- xts(rev(data), rev(dates))
-    colnames(x) <- id
-    results[[i]] <- x
+    #dates <- res$response$data[[1]]
+    data<-res$response$data%>% mutate(period=fast_strptime(period,format=date_format))
+    results[[i]] <- data
   }
   
   if (length(results) == 0)
     return(NULL)
   
-  if ("H" %in% freqlist && !all(freqlist=="H"))
-    stop("You cannot mix hourly and non-hourly data in the same call")
+  results[[i]]
   
-  na.trim(do.call(merge.xts, results), is.na="all")
 }
 
 #' Fetch data from the Deutsche Bundesbank
